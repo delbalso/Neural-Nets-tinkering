@@ -30,46 +30,35 @@ def train(labels, features, nn):
     w = dict()
     delta_w = dict()
     delta = dict()
-    #print "w shapes"
     for i in xrange(1,nn.index_of_final_layer+1):
-        limit = np.sqrt(6/(nn.layers[i-1]+1+nn.layers[i]))
+        limit = np.sqrt(float(6)/(nn.layers[i-1]+1+nn.layers[i]))
         w[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i], nn.layers[i-1]+1))
-        #w[i] = np.random.random((nn.layers[i], nn.layers[i-1]+1))/math.sqrt(nn.layers[i-1]+1) - 1/math.sqrt(nn.layers[i-1]+1)/2 # 10 x 257
-        #print "w["+str(i)+"] shape: "+str(w[i].shape)
 
-    for j in range(10): # number of training loops
-
+    for j in range(500): # number of training loops
         a = feedforward (features, w, nn)
-        if j%50==0:
+        if j%10==0:
             training_accuracy = accuracy(a[nn.index_of_final_layer],labels)
             print "training accuracy: " + str(training_accuracy)
         for l in sorted(w.keys(),reverse=True):
 # compute error, elementwise computations
-            #print "l = " + str(l)
             sigma_derivative = np.multiply(a[l], 1 - a[l]) # 10 x 1593
 
             if l == nn.index_of_final_layer:
                 delta[l] = np.multiply(a[l] - labels, sigma_derivative) # 10 x 1593
             elif l== nn.index_of_final_layer-1:
-                #print w[l+1].transpose().shape
-                #print delta[l+1].shape
                 delta[l] = np.multiply(np.dot(w[l+1].transpose(),delta[l+1]), sigma_derivative) # 10 x 1593
             else:
-                #print w[l+1].transpose().shape
-                #print delta[l+1].shape
                 delta[l] = np.multiply(np.dot(w[l+1].transpose(),delta[l+1][1:]), sigma_derivative) # 10 x 1593
-            #print "delta["+str(l)+"].shape = "+str(delta[l].shape)
 
          # compute delta W
             weight_deltas = np.zeros((num_data,nn.layers[l],nn.layers[l-1]+1))
-            learning_rate = .1
+            learning_rate = 1
             for datum in range(num_data):
                 if l == nn.index_of_final_layer: # this part could be fucked
                     weight_deltas[datum,:,:] = np.dot(np.mat(delta[l])[:,datum],np.mat(a[l-1])[:,datum].transpose()) # mat multiplication
                 else:
                     weight_deltas[datum,:,:] = np.dot(np.mat(delta[l])[1:,datum],np.mat(a[l-1])[:,datum].transpose()) # mat multiplication
             delta_w[l] = weight_deltas.mean(axis=0)
-            #print delta_w[l]
             w[l] = w[l] - learning_rate * delta_w[l]
     return w
 
@@ -80,14 +69,16 @@ def feedforward(features, w, nn):
     a[0] = np.ones((features.shape[0]+1,features.shape[1]))
     a[0][1:,:] = features
     for l in w:
-        print "shape of w["+str(l)+"]: " +str(w[l].shape)
-        print "shape of a["+str(l-1)+"]: " +str(a[l-1].shape)
+        #print "shape of w["+str(l)+"]: " +str(w[l].shape)
+        #print "shape of a["+str(l-1)+"]: " +str(a[l-1].shape)
         no_bias_a = logistic(np.dot(w[l],a[l-1]))
         if l == nn.index_of_final_layer:
             a[l] = no_bias_a
         else:
             a[l] = np.ones((no_bias_a.shape[0]+1,no_bias_a.shape[1]))
             a[l][1:,:] = no_bias_a
+        #print (a)
+        #print w
     return a
 
 def test(labels, features, weights, nn):
@@ -103,7 +94,7 @@ class NN():
         self.index_of_final_layer = len(layers)-1
 
 def main():
-    nn = NN([256,10])
+    nn = NN([256, 100, 10])
     print nn.index_of_final_layer
 #read in data
     raw_data = pd.read_csv("/Users/delbalso/projects/nn1/data.data", sep=" ", header=None)
