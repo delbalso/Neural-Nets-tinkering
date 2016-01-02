@@ -94,15 +94,16 @@ class NN():
         self.index_of_final_layer = len(layers)-1
 
 def main():
-    nn = NN([256, 100, 10])
-    print nn.index_of_final_layer
+    nn = NN([256, 10])
 #read in data
-    raw_data = pd.read_csv("/Users/delbalso/projects/nn1/data.data", sep=" ", header=None)
+    raw_data = pd.read_csv("/Users/delbalso/projects/nn1/data.data", sep=",", header=None)
     raw_data = raw_data.reindex(np.random.permutation(raw_data.index))
-    data = np.array(raw_data.drop(raw_data.columns[[-1]],1).transpose())
-    features = data[:-10,:] # 257 x 1593
-    labels = data[-10:,:] # 10 * 1593
-    weights = train(labels[:,:-200],features[:,:-200],nn)
-    test(labels[:,-200:],features[:,-200:],weights,nn)
+    data = np.array(raw_data.transpose())
+    num_labels = 10
+    num_test_data = int(data.shape[1]*0.2)
+    features = data[:-num_labels,:] # num_features x num_examples
+    labels = data[-1*num_labels:,:] # num_labels x num_examples
+    weights = train(labels[:,:-1*num_test_data],features[:,:-num_test_data],nn)
+    test(labels[:,-num_test_data:],features[:,-num_test_data:],weights,nn)
 if __name__ == "__main__":
     main()
