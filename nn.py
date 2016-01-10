@@ -19,6 +19,7 @@ def plot(training_accuracy_history):
             'size': 16,
             }
 
+# accuracy subplot
     plt.figure(1)
     plt.subplot(211)
     plt.plot(training_accuracy_history, 'b-', label="Training Data")
@@ -27,8 +28,10 @@ def plot(training_accuracy_history):
     plt.xlabel('Training Epochs', fontdict=font)
     plt.ylabel('Classification Accuracy (%)', fontdict=font)
     plt.subplots_adjust(hspace=.5)
+    plt.ylim([0, 1])
     plt.legend(loc='lower right')
 
+# cost subplot
     plt.subplot(212)
     plt.plot(training_cost_history, 'b-', label="Training Data")
     #plt.plot(test_accuracy_history, 'r-', label="Test Data")
@@ -36,6 +39,7 @@ def plot(training_accuracy_history):
     plt.xlabel('Training Epochs', fontdict=font)
     plt.ylabel('Cost', fontdict=font)
     plt.subplots_adjust(hspace=.5)
+    plt.ylim([0, plt.ylim()[1]])
     plt.legend(loc='lower right')
 
 # Tweak spacing to prevent clipping of ylabel
@@ -83,15 +87,27 @@ def initialize_weights(nn):
     nn.w = w
 
 
+class QuadraticCost():
+
+    @staticmethod
+    def cost(outputs, labels):
+        print outputs.shape[1]
+        return 0.5 * np.sum(np.square(outputs - labels)) / outputs.shape[1]
+
+    @staticmethod
+    def delta(outputs, labels, sigma_derivative):
+        return np.multiply(outputs - labels, sigma_derivative)
+
+
 class CrossEntropyCost():
 
     @staticmethod
     def cost(outputs, labels):
         return np.sum(np.nan_to_num(-labels * np.log(outputs) -
-                             (1 - labels) * np.log(1 - outputs)))
+                                    (1 - labels) * np.log(1 - outputs)))
 
     @staticmethod
-    def delta(outputs, labels):
+    def delta(outputs, labels, sigma_derivative):
         return (outputs - labels)
 
 
@@ -102,7 +118,8 @@ def train(
         epochs,
         mini_batch_size,
         test_labels,
-        test_features):
+        test_features,
+        costfunction=CrossEntropyCost):
     # initalize
     num_training_data = labels[1, :].size
     a = dict()
@@ -125,7 +142,9 @@ def train(
                 nn.index_of_final_layer], test_labels)
         training_accuracy_history.append(training_accuracy)
         test_accuracy_history.append(test_accuracy)
-        training_cost_history.append(CrossEntropyCost.cost(training_prediction_output, labels))
+        training_cost_history.append(
+            costfunction.cost(
+                training_prediction_output, labels))
         print "training accuracy: " + str(training_accuracy)
         if training_accuracy == 1:
             break
@@ -142,10 +161,11 @@ def train(
                 sigma_derivative = np.multiply(a[l], 1 - a[l])  # 10 x 1593
 
                 if l == nn.index_of_final_layer:
-                    # delta[l] = np.multiply(a[l] - labels_batch, sigma_derivative) # 10
+                    delta[l] = costfunction.delta(
+                        a[l], labels_batch, sigma_derivative)
                     # x 1593
                     # cross-entropy loss function (or log loss for softmax)
-                    delta[l] = CrossEntropyCost.delta(a[l], labels_batch)
+                    #delta[l] = CrossEntropyCost.delta(a[l], labels_batch)
 
                 elif l == nn.index_of_final_layer - 1:
                     delta[l] = np.multiply(
@@ -258,7 +278,7 @@ def main():
     training_data, validation_data, test_data = mnist.load_data_wrapper_1()
     random.shuffle(training_data)
 # train
-    training_features, training_labels = zip(*training_data[:])
+    training_features, training_labels = zip(*training_data[:1000])
     training_features = np.squeeze(training_features).transpose()
     training_labels = np.squeeze(training_labels).transpose()
 # test
@@ -273,9 +293,11 @@ def main():
         10,
         30,
         test_labels,
-        test_features)
-    plot(training_accuracy_history)
+        test_features,
+        costfunction=QuadraticCost)
+
     test(test_labels, test_features, nn)
+    plot(training_accuracy_history)
 
 
 if __name__ == "__main__":
