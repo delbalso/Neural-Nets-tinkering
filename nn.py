@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 np.random.seed(12345678)
 training_accuracy_history = list()
 test_accuracy_history = list()
+training_cost_history = list()
 
 
 def plot(training_accuracy_history):
@@ -18,11 +19,23 @@ def plot(training_accuracy_history):
             'size': 16,
             }
 
+    plt.figure(1)
+    plt.subplot(211)
     plt.plot(training_accuracy_history, 'b-', label="Training Data")
     plt.plot(test_accuracy_history, 'r-', label="Test Data")
     plt.title('Model accuracy during training', fontdict=font)
     plt.xlabel('Training Epochs', fontdict=font)
     plt.ylabel('Classification Accuracy (%)', fontdict=font)
+    plt.subplots_adjust(hspace=.5)
+    plt.legend(loc='lower right')
+
+    plt.subplot(212)
+    plt.plot(training_cost_history, 'b-', label="Training Data")
+    #plt.plot(test_accuracy_history, 'r-', label="Test Data")
+    plt.title('Cost Function during training', fontdict=font)
+    plt.xlabel('Training Epochs', fontdict=font)
+    plt.ylabel('Cost', fontdict=font)
+    plt.subplots_adjust(hspace=.5)
     plt.legend(loc='lower right')
 
 # Tweak spacing to prevent clipping of ylabel
@@ -70,6 +83,18 @@ def initialize_weights(nn):
     nn.w = w
 
 
+class CrossEntropyCost():
+
+    @staticmethod
+    def cost(outputs, labels):
+        return np.sum(np.nan_to_num(-labels * np.log(outputs) -
+                             (1 - labels) * np.log(1 - outputs)))
+
+    @staticmethod
+    def delta(outputs, labels):
+        return (outputs - labels)
+
+
 def train(
         labels,
         features,
@@ -89,16 +114,18 @@ def train(
     for j in range(epochs):  # number of training loops
         print "Starting epoch " + str(j) + " of " + str(epochs)
 # Calculate test/training accuracy for plotting
+        training_prediction_output = feedforward(
+            features, nn)[
+            nn.index_of_final_layer]
         training_accuracy = accuracy(
-            feedforward(
-                features, nn)[
-                nn.index_of_final_layer], labels)
+            training_prediction_output, labels)
         test_accuracy = accuracy(
             feedforward(
                 test_features, nn)[
                 nn.index_of_final_layer], test_labels)
         training_accuracy_history.append(training_accuracy)
         test_accuracy_history.append(test_accuracy)
+        training_cost_history.append(CrossEntropyCost.cost(training_prediction_output, labels))
         print "training accuracy: " + str(training_accuracy)
         if training_accuracy == 1:
             break
@@ -118,7 +145,7 @@ def train(
                     # delta[l] = np.multiply(a[l] - labels_batch, sigma_derivative) # 10
                     # x 1593
                     # cross-entropy loss function (or log loss for softmax)
-                    delta[l] = (a[l] - labels_batch)
+                    delta[l] = CrossEntropyCost.delta(a[l], labels_batch)
 
                 elif l == nn.index_of_final_layer - 1:
                     delta[l] = np.multiply(
@@ -231,7 +258,7 @@ def main():
     training_data, validation_data, test_data = mnist.load_data_wrapper_1()
     random.shuffle(training_data)
 # train
-    training_features, training_labels = zip(*training_data[:1000])
+    training_features, training_labels = zip(*training_data[:])
     training_features = np.squeeze(training_features).transpose()
     training_labels = np.squeeze(training_labels).transpose()
 # test
