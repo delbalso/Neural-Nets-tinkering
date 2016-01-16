@@ -5,11 +5,16 @@ import random
 import mnist_loader as mnist
 import matplotlib.pyplot as plt
 
+# Hyperparameters
+MAX_DECLINES_BEFORE_STOP = 10
+LEARNING_RATE = .5
+L2_LAMDA = 0.00
 
 np.random.seed(12345678)
 training_accuracy_history = list()
-test_accuracy_history = list()
+validation_accuracy_history = list()
 training_cost_history = list()
+validation_cost_history = list()
 
 
 def plot(training_accuracy_history):
@@ -23,7 +28,7 @@ def plot(training_accuracy_history):
     plt.figure(1)
     plt.subplot(211)
     plt.plot(training_accuracy_history, 'b-', label="Training Data")
-    plt.plot(test_accuracy_history, 'r-', label="Test Data")
+    plt.plot(validation_accuracy_history, 'r-', label="Validation Data")
     plt.title('Model accuracy during training', fontdict=font)
     plt.xlabel('Training Epochs', fontdict=font)
     plt.ylabel('Classification Accuracy (%)', fontdict=font)
@@ -34,13 +39,13 @@ def plot(training_accuracy_history):
 # cost subplot
     plt.subplot(212)
     plt.plot(training_cost_history, 'b-', label="Training Data")
-    #plt.plot(test_accuracy_history, 'r-', label="Test Data")
+    plt.plot(validation_cost_history, 'r-', label="Validation Data")
     plt.title('Cost Function during training', fontdict=font)
     plt.xlabel('Training Epochs', fontdict=font)
     plt.ylabel('Cost', fontdict=font)
     plt.subplots_adjust(hspace=.5)
     plt.ylim([0, plt.ylim()[1]])
-    plt.legend(loc='lower right')
+    plt.legend(loc='upper right')
 
 # Tweak spacing to prevent clipping of ylabel
     plt.subplots_adjust(left=0.15)
@@ -112,50 +117,62 @@ class CrossEntropyCost():
 
 
 def train(
-        labels,
-        features,
-        nn,
+        training_data, validation_data, test_data, nn,
         epochs,
         mini_batch_size,
-        test_labels,
-        test_features,
         costfunction=CrossEntropyCost):
-    # initalize
-    num_training_data = labels[1, :].size
+    num_training_data = training_data.labels[1, :].size
     a = dict()
-# set up inital weights
     delta_w = dict()
     delta = dict()
+    validation_accuracy = -1
+    validation_accuracy_decreases = 0
     initialize_weights(nn)
 
     for j in range(epochs):  # number of training loops
         print "Starting epoch " + str(j) + " of " + str(epochs)
-# Calculate test/training accuracy for plotting
-        training_prediction_output = feedforward(
-            features, nn)[
+        old_validation_accuracy = validation_accuracy
+
+        training_predictions = feedforward(
+            training_data.features, nn)[
             nn.index_of_final_layer]
         training_accuracy = accuracy(
-            training_prediction_output, labels)
-        test_accuracy = accuracy(
-            feedforward(
-                test_features, nn)[
-                nn.index_of_final_layer], test_labels)
+            training_predictions, training_data.labels)
+
+        validation_predictions = feedforward(
+            validation_data.features, nn)[
+            nn.index_of_final_layer]
+        validation_accuracy = accuracy(
+            validation_predictions,
+            validation_data.labels)
+
         training_accuracy_history.append(training_accuracy)
-        test_accuracy_history.append(test_accuracy)
+        validation_accuracy_history.append(validation_accuracy)
+
         training_cost_history.append(
             costfunction.cost(
-                training_prediction_output, labels))
+                training_predictions, training_data.labels))
+        validation_cost_history.append(
+            costfunction.cost(
+                validation_predictions, validation_data.labels))
         print "training accuracy: " + str(training_accuracy)
         if training_accuracy == 1:
             break
+        if validation_accuracy <= old_validation_accuracy:
+            validation_accuracy_decreases += 1
+        else:
+            validation_accuracy_decreases = 0
+        if validation_accuracy_decreases > MAX_DECLINES_BEFORE_STOP:
+            break
 
         for mini_batch_index in xrange(0, num_training_data, mini_batch_size):
-            features_batch = features[
-                :, mini_batch_index:mini_batch_index + mini_batch_size]
-            labels_batch = labels[
-                :, mini_batch_index:mini_batch_index + mini_batch_size]
+            features_batch = training_data.features[
+                :, mini_batch_index: mini_batch_index + mini_batch_size]
+            labels_batch = training_data.labels[
+                :, mini_batch_index: mini_batch_index + mini_batch_size]
             this_batch_size = labels_batch[1, :].size
             a = feedforward(features_batch, nn)
+# Iterate through the layers
             for l in sorted(nn.w.keys(), reverse=True):
                 # compute error, elementwise computations
                 sigma_derivative = np.multiply(a[l], 1 - a[l])  # 10 x 1593
@@ -163,9 +180,6 @@ def train(
                 if l == nn.index_of_final_layer:
                     delta[l] = costfunction.delta(
                         a[l], labels_batch, sigma_derivative)
-                    # x 1593
-                    # cross-entropy loss function (or log loss for softmax)
-                    #delta[l] = CrossEntropyCost.delta(a[l], labels_batch)
 
                 elif l == nn.index_of_final_layer - 1:
                     delta[l] = np.multiply(
@@ -174,10 +188,10 @@ def train(
                                 l + 1].transpose(),
                             delta[
                                 l + 1]),
-                        sigma_derivative)  # 10 x 1593
+                        sigma_derivative)
                 else:
                     delta[l] = np.multiply(
-                        np.dot(nn.w[l + 1].transpose(), delta[l + 1][1:]), sigma_derivative)  # 10 x 1593
+                        np.dot(nn.w[l + 1].transpose(), delta[l + 1][1:]), sigma_derivative)
 
              # compute delta W
                 weight_deltas = np.zeros(
@@ -185,8 +199,6 @@ def train(
                      nn.layers[l].size,
                         nn.layers[
                          l - 1].size + 1))
-                learning_rate = .15
-                l2_param = 0.1
                 for datum in range(this_batch_size):
                     if l == nn.index_of_final_layer:
                         weight_deltas[datum, :, :] = np.dot(np.mat(delta[l])[:, datum], np.mat(
@@ -196,11 +208,11 @@ def train(
                             a[l - 1])[:, datum].transpose())  # mat multiplication
                 delta_w[l] = weight_deltas.mean(axis=0)
 # Apply regularization
-                regularization = 1 - learning_rate * l2_param / this_batch_size
+                regularization = 1 - LEARNING_RATE * L2_LAMDA / this_batch_size
                 regularization_mat = np.append(
                     [1], np.ones(nn.w[l].shape[1] - 1) * regularization)
                 nn.w[l] = nn.w[l] * regularization_mat[None, :] - \
-                    learning_rate * delta_w[l]
+                    LEARNING_RATE * delta_w[l]
 
 
 def feedforward(features, nn):
@@ -223,11 +235,11 @@ def feedforward(features, nn):
     return a
 
 
-def test(labels, features, nn):
-    a = feedforward(features, nn)
+def test(data, nn):
+    a = feedforward(data.features, nn)
     output = a[nn.index_of_final_layer]  # 10 x 1593
     # print output
-    test_accuracy = accuracy(output, labels)
+    test_accuracy = accuracy(output, data.labels)
     print "test accuracy = " + str(test_accuracy)
 
 
@@ -248,9 +260,16 @@ class Layer():
         self.ltype = ltype
 
 
+class MLDataSet():
+
+    def __init__(self, features, labels):
+        self.features = features
+        self.labels = labels
+
+
 def main():
-    nn = NN([Layer(784), Layer(100), Layer(10, ltype=Layer.T_SOFTMAX)])
-#read in data
+    nn = NN([Layer(784), Layer(100), Layer(10, ltype=Layer.T_LOGISTIC)])
+# read in data
     """
     raw_data = pd.read_csv(
         "/Users/delbalso/projects/nn1/data/handwriting.csv",
@@ -277,26 +296,28 @@ def main():
     """
     training_data, validation_data, test_data = mnist.load_data_wrapper_1()
     random.shuffle(training_data)
-# train
-    training_features, training_labels = zip(*training_data[:1000])
-    training_features = np.squeeze(training_features).transpose()
-    training_labels = np.squeeze(training_labels).transpose()
-# test
+    training_features, training_labels = zip(*training_data[:10000])
+    training_data = MLDataSet(
+        np.squeeze(training_features).transpose(),
+        np.squeeze(training_labels).transpose())
+    validation_features, validation_labels = zip(*validation_data)
+    validation_data = MLDataSet(
+        np.squeeze(validation_features).transpose(),
+        np.squeeze(validation_labels).transpose())
     test_features, test_labels = zip(*test_data)
-    test_features = np.squeeze(test_features).transpose()
-    test_labels = np.squeeze(test_labels).transpose()
+    test_data = MLDataSet(
+        np.squeeze(test_features).transpose(),
+        np.squeeze(test_labels).transpose())
 
     train(
-        training_labels,
-        training_features,
+        training_data,
+        validation_data,
+        test_data,
         nn,
-        10,
         30,
-        test_labels,
-        test_features,
-        costfunction=QuadraticCost)
+        30)
 
-    test(test_labels, test_features, nn)
+    test(test_data, nn)
     plot(training_accuracy_history)
 
 
