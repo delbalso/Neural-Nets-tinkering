@@ -4,11 +4,15 @@ import numpy as np
 import random
 import mnist_loader as mnist
 import matplotlib.pyplot as plt
+import copy
+
+TRACK_VALIDATION_ACCURACY = True
 
 # Hyperparameters
 MAX_DECLINES_BEFORE_STOP = 10
-LEARNING_RATE = .5
-L2_LAMDA = 0.00
+LEARNING_RATE = .1
+L2_LAMDA = 5
+FRICTION = 0.9
 
 np.random.seed(12345678)
 training_accuracy_history = list()
@@ -17,7 +21,7 @@ training_cost_history = list()
 validation_cost_history = list()
 
 
-def plot(training_accuracy_history):
+def plot_history(training_accuracy_history):
     font = {'family': 'sans-serif',
             'color': 'black',
             'weight': 'normal',
@@ -128,44 +132,52 @@ def train(
     validation_accuracy = -1
     validation_accuracy_decreases = 0
     initialize_weights(nn)
+    velocity = dict()
+    for index in nn.w:
+        velocity[index] = np.zeros_like(nn.w[index])
 
     for j in range(epochs):  # number of training loops
         print "Starting epoch " + str(j) + " of " + str(epochs)
-        old_validation_accuracy = validation_accuracy
+        if MAX_DECLINES_BEFORE_STOP > 0:
+            old_validation_accuracy = validation_accuracy
 
-        training_predictions = feedforward(
-            training_data.features, nn)[
-            nn.index_of_final_layer]
-        training_accuracy = accuracy(
-            training_predictions, training_data.labels)
+        if TRACK_VALIDATION_ACCURACY:
+            training_predictions = feedforward(
+                training_data.features, nn)[
+                nn.index_of_final_layer]
+            training_accuracy = accuracy(
+                training_predictions, training_data.labels)
+            training_accuracy_history.append(training_accuracy)
+            training_cost_history.append(
+                costfunction.cost(
+                    training_predictions, training_data.labels))
+            if training_accuracy == 1:
+                break
 
-        validation_predictions = feedforward(
-            validation_data.features, nn)[
-            nn.index_of_final_layer]
-        validation_accuracy = accuracy(
-            validation_predictions,
-            validation_data.labels)
+        if MAX_DECLINES_BEFORE_STOP > 0 or TRACK_VALIDATION_ACCURACY:
+            validation_predictions = feedforward(
+                validation_data.features, nn)[
+                nn.index_of_final_layer]
+            validation_accuracy = accuracy(
+                validation_predictions,
+                validation_data.labels)
+            validation_accuracy_history.append(validation_accuracy)
+            validation_cost_history.append(
+                costfunction.cost(
+                    validation_predictions, validation_data.labels))
+            print "training accuracy: " + str(training_accuracy)
 
-        training_accuracy_history.append(training_accuracy)
-        validation_accuracy_history.append(validation_accuracy)
 
-        training_cost_history.append(
-            costfunction.cost(
-                training_predictions, training_data.labels))
-        validation_cost_history.append(
-            costfunction.cost(
-                validation_predictions, validation_data.labels))
-        print "training accuracy: " + str(training_accuracy)
-        if training_accuracy == 1:
-            break
-        if validation_accuracy <= old_validation_accuracy:
-            validation_accuracy_decreases += 1
-        else:
-            validation_accuracy_decreases = 0
-        if validation_accuracy_decreases > MAX_DECLINES_BEFORE_STOP:
-            break
+        if MAX_DECLINES_BEFORE_STOP > 0:
+            if validation_accuracy <= old_validation_accuracy:
+                validation_accuracy_decreases += 1
+            else:
+                validation_accuracy_decreases = 0
+            if validation_accuracy_decreases > MAX_DECLINES_BEFORE_STOP:
+                break
 
         for mini_batch_index in xrange(0, num_training_data, mini_batch_size):
+            old_velocity = copy.deepcopy(velocity)
             features_batch = training_data.features[
                 :, mini_batch_index: mini_batch_index + mini_batch_size]
             labels_batch = training_data.labels[
@@ -211,8 +223,9 @@ def train(
                 regularization = 1 - LEARNING_RATE * L2_LAMDA / this_batch_size
                 regularization_mat = np.append(
                     [1], np.ones(nn.w[l].shape[1] - 1) * regularization)
-                nn.w[l] = nn.w[l] * regularization_mat[None, :] - \
-                    LEARNING_RATE * delta_w[l]
+                velocity[l] = old_velocity[l] * FRICTION - LEARNING_RATE * delta_w[l]
+                nn.w[l] = nn.w[l] * regularization_mat[None, :] + velocity[l]
+
 
 
 def feedforward(features, nn):
@@ -296,11 +309,11 @@ def main():
     """
     training_data, validation_data, test_data = mnist.load_data_wrapper_1()
     random.shuffle(training_data)
-    training_features, training_labels = zip(*training_data[:10000])
+    training_features, training_labels = zip(*training_data[:1000])
     training_data = MLDataSet(
         np.squeeze(training_features).transpose(),
         np.squeeze(training_labels).transpose())
-    validation_features, validation_labels = zip(*validation_data)
+    validation_features, validation_labels = zip(*validation_data[:1000])
     validation_data = MLDataSet(
         np.squeeze(validation_features).transpose(),
         np.squeeze(validation_labels).transpose())
@@ -318,7 +331,7 @@ def main():
         30)
 
     test(test_data, nn)
-    plot(training_accuracy_history)
+    plot_history(training_accuracy_history)
 
 
 if __name__ == "__main__":
