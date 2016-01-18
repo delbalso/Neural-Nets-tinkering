@@ -6,19 +6,31 @@ import mnist_loader as mnist
 import matplotlib.pyplot as plt
 import copy
 
-TRACK_VALIDATION_ACCURACY = True
+TRACK_VALIDATION_ACCURACY = False
 
-# Hyperparameters
-MAX_DECLINES_BEFORE_STOP = 10
-LEARNING_RATE = .1
-L2_LAMDA = 5
-FRICTION = 0.9
 
 np.random.seed(12345678)
 training_accuracy_history = list()
 validation_accuracy_history = list()
 training_cost_history = list()
 validation_cost_history = list()
+
+
+def plot_hyperparam_search(x, y, z, x_label, y_label):
+    print x
+    print y
+    print z
+    plt.figure(1)
+    plt.title('Hyperparam search')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.axis([x.min(), x.max(), y.min(), y.max()])
+    #plt.axis([x.min(), 10, y.min(), 10])
+    plt.pcolor(x, y, z, cmap='RdBu')
+    plt.colorbar()
+    plt.show()
 
 
 def plot_history(training_accuracy_history):
@@ -100,7 +112,6 @@ class QuadraticCost():
 
     @staticmethod
     def cost(outputs, labels):
-        print outputs.shape[1]
         return 0.5 * np.sum(np.square(outputs - labels)) / outputs.shape[1]
 
     @staticmethod
@@ -121,10 +132,10 @@ class CrossEntropyCost():
 
 
 def train(
-        training_data, validation_data, test_data, nn,
+        training_data, nn,
         epochs,
         mini_batch_size,
-        costfunction=CrossEntropyCost):
+        costfunction=CrossEntropyCost, validation_data=None):
     num_training_data = training_data.labels[1, :].size
     a = dict()
     delta_w = dict()
@@ -138,7 +149,7 @@ def train(
 
     for j in range(epochs):  # number of training loops
         print "Starting epoch " + str(j) + " of " + str(epochs)
-        if MAX_DECLINES_BEFORE_STOP > 0:
+        if nn.max_declines_before_stop > 0:
             old_validation_accuracy = validation_accuracy
 
         if TRACK_VALIDATION_ACCURACY:
@@ -154,7 +165,7 @@ def train(
             if training_accuracy == 1:
                 break
 
-        if MAX_DECLINES_BEFORE_STOP > 0 or TRACK_VALIDATION_ACCURACY:
+        if nn.max_declines_before_stop > 0 or TRACK_VALIDATION_ACCURACY:
             validation_predictions = feedforward(
                 validation_data.features, nn)[
                 nn.index_of_final_layer]
@@ -167,13 +178,12 @@ def train(
                     validation_predictions, validation_data.labels))
             print "training accuracy: " + str(training_accuracy)
 
-
-        if MAX_DECLINES_BEFORE_STOP > 0:
+        if nn.max_declines_before_stop > 0:
             if validation_accuracy <= old_validation_accuracy:
                 validation_accuracy_decreases += 1
             else:
                 validation_accuracy_decreases = 0
-            if validation_accuracy_decreases > MAX_DECLINES_BEFORE_STOP:
+            if validation_accuracy_decreases > nn.max_declines_before_stop:
                 break
 
         for mini_batch_index in xrange(0, num_training_data, mini_batch_size):
@@ -220,12 +230,12 @@ def train(
                             a[l - 1])[:, datum].transpose())  # mat multiplication
                 delta_w[l] = weight_deltas.mean(axis=0)
 # Apply regularization
-                regularization = 1 - LEARNING_RATE * L2_LAMDA / this_batch_size
+                regularization = 1 - nn.learning_rate * nn.l2_lamda / this_batch_size
                 regularization_mat = np.append(
                     [1], np.ones(nn.w[l].shape[1] - 1) * regularization)
-                velocity[l] = old_velocity[l] * FRICTION - LEARNING_RATE * delta_w[l]
+                velocity[l] = old_velocity[l] * \
+                    nn.friction - nn.learning_rate * delta_w[l]
                 nn.w[l] = nn.w[l] * regularization_mat[None, :] + velocity[l]
-
 
 
 def feedforward(features, nn):
@@ -251,9 +261,9 @@ def feedforward(features, nn):
 def test(data, nn):
     a = feedforward(data.features, nn)
     output = a[nn.index_of_final_layer]  # 10 x 1593
-    # print output
     test_accuracy = accuracy(output, data.labels)
     print "test accuracy = " + str(test_accuracy)
+    return test_accuracy
 
 
 class NN():
@@ -262,6 +272,12 @@ class NN():
         self.layers = layers
         self.index_of_final_layer = len(layers) - 1
         self.w = dict()
+
+# Hyperparameters
+        self.max_declines_before_stop = 0
+        self.learning_rate = .1
+        self.l2_lamda = 0.119
+        self.friction = 0.53346
 
 
 class Layer():
@@ -280,8 +296,40 @@ class MLDataSet():
         self.labels = labels
 
 
+def hyperparam_search(
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        nn,
+        training_data,
+        validation_data):
+    granularity = 5
+    eps = 1e-10
+    x_range = np.logspace(
+        np.log10(
+            x_min + eps),
+        np.log10(x_max),
+        granularity + 1)
+    y_range = np.logspace(
+        np.log10(
+            y_min + eps),
+        np.log10(y_max),
+        granularity + 1)
+    results = np.zeros([granularity, granularity])
+    for x_index, x in enumerate(x_range[:-1]):
+        for y_index, y in enumerate(y_range[:-1]):
+            print "x is " + str(x) + " and y is " + str(y)
+
+            train(training_data, nn, int(x), int(y))
+
+            print "Indices: " + str(x_index) + ", " + str(y_index)
+            results[x_index][y_index] = float(test(validation_data, nn))
+    plot_hyperparam_search(x_range, y_range, results.transpose(), 'epochs', 'batch size')
+
+
 def main():
-    nn = NN([Layer(784), Layer(100), Layer(10, ltype=Layer.T_LOGISTIC)])
+    nn = NN([Layer(784), Layer(30), Layer(10, ltype=Layer.T_LOGISTIC)])
 # read in data
     """
     raw_data = pd.read_csv(
@@ -309,11 +357,11 @@ def main():
     """
     training_data, validation_data, test_data = mnist.load_data_wrapper_1()
     random.shuffle(training_data)
-    training_features, training_labels = zip(*training_data[:1000])
+    training_features, training_labels = zip(*training_data[:10000])
     training_data = MLDataSet(
         np.squeeze(training_features).transpose(),
         np.squeeze(training_labels).transpose())
-    validation_features, validation_labels = zip(*validation_data[:1000])
+    validation_features, validation_labels = zip(*validation_data[:])
     validation_data = MLDataSet(
         np.squeeze(validation_features).transpose(),
         np.squeeze(validation_labels).transpose())
@@ -322,16 +370,17 @@ def main():
         np.squeeze(test_features).transpose(),
         np.squeeze(test_labels).transpose())
 
-    train(
+    hyperparam_search(1, 10, 1, 1000, nn, training_data, validation_data)
+    """train(
         training_data,
-        validation_data,
-        test_data,
         nn,
         30,
-        30)
+        30,
+        validation_data=validation_data)
 
     test(test_data, nn)
     plot_history(training_accuracy_history)
+    """
 
 
 if __name__ == "__main__":
