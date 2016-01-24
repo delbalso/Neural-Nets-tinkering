@@ -43,17 +43,21 @@ def accuracy(output, labels):
 
 def initialize_weights(nn):
     w = dict()
+    bias = dict()
     for i in xrange(1, nn.index_of_final_layer + 1):
         limit = np.sqrt(
             float(6) / (nn.layers[i - 1].size + 1 + nn.layers[i].size))
         if nn.layers[i].ctype == Layer.C_FULLYCONNECTED:
             w[i] = np.random.uniform(-1 * limit, limit,
-                                     (nn.layers[i].size, nn.layers[i - 1].size + 1))
+                                     (nn.layers[i].size, nn.layers[i - 1].size))
+            bias[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i].size,1))
         elif nn.layers[i].ctype == Layer.C_CONV:
             assert is_square(nn.layers[i].size)
             edge = np.sqrt(nn.layers[i].size)
-            w[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i].size+1,1))
+            w[i] = np.random.uniform(-1 * limit, limit, (edge,edge))
+            bias[i] = np.random.uniform(-1 * limit, limit, nn.layers[i].size)
     nn.w = w
+    nn.bias = bias
 
 
 class QuadraticCost():
@@ -116,6 +120,7 @@ def train(
     num_training_data = training_data.labels[1, :].size
     a = dict()
     delta_w = dict()
+    delta_bias = dict()
     delta = dict()
     validation_accuracy = -1
     validation_accuracy_decreases = 0
@@ -157,7 +162,7 @@ def train(
                     delta[l] = costfunction.delta(
                         a[l], labels_batch, sigma_derivative)
 
-                elif l == nn.index_of_final_layer - 1:
+                else:
                     delta[l] = np.multiply(
                         np.dot(
                             nn.w[
@@ -165,29 +170,25 @@ def train(
                             delta[
                                 l + 1]),
                         sigma_derivative)
-                else:
-                    delta[l] = np.multiply(
-                        np.dot(nn.w[l + 1].transpose(), delta[l + 1][1:]), sigma_derivative)
 
              # compute delta W
+                bias_deltas = np.zeros(
+                    (this_batch_size, nn.bias[l].shape[0], nn.bias[l].shape[1]))
                 weight_deltas = np.zeros(
                     (this_batch_size, nn.w[l].shape[0], nn.w[l].shape[1]))
                 for datum in range(this_batch_size):
-                    if l == nn.index_of_final_layer:
-                        delta_l = np.mat(delta[l])[:, datum]
-                    else:
-                        delta_l = np.mat(delta[l])[1:, datum]
+                    delta_l = np.mat(delta[l])[:, datum]
                     a_prev = np.mat(a[l - 1])[:, datum]
-                    weight_deltas[datum, :, :] = nn.layers[
-                        l].delta_w(a_prev, delta_l)
+                    weight_deltas[datum, :, :], bias_deltas[datum,:,:] = nn.layers[
+                        l].delta_w(a_prev, delta_l)#figure out how to get bias_deltas
                 delta_w[l] = weight_deltas.mean(axis=0)
+                delta_bias[l] = bias_deltas.mean(axis=0)
 # Apply regularization
                 regularization = 1 - nn.learning_rate * nn.l2_lamda / this_batch_size
-                regularization_mat = np.append(
-                    [1], np.ones(nn.w[l].shape[1] - 1) * regularization)
                 velocity[l] = old_velocity[l] * \
                     nn.friction - nn.learning_rate * delta_w[l]
-                nn.w[l] = nn.w[l] * regularization_mat[None, :] + velocity[l]
+                nn.w[l] = nn.w[l] * regularization + velocity[l]
+                nn.bias[l] = nn.bias[l] - nn.learning_rate * delta_bias[l]
 
 
 def is_square(n):
@@ -196,19 +197,13 @@ def is_square(n):
 
 def feedforward(features, nn):
     a = dict()
-    a[0] = np.ones((features.shape[0] + 1, features.shape[1]))
-    a[0][1:, :] = features
+    a[0] = features
     for l in nn.w:
 
-        z = nn.layers[l].forward_pass(nn.w[l], a[l - 1])#.reshape((nn.layers[l].size+1,-1))
+        z = nn.layers[l].forward_pass(nn.w[l], nn.bias[l], a[l - 1])#.reshape((nn.layers[l].size+1,-1))
         no_bias_a = nn.layers[l].activation_function(z)
 
-        # add bias if needed
-        if l == nn.index_of_final_layer:
-            a[l] = no_bias_a
-        else:
-            a[l] = np.ones((no_bias_a.shape[0] + 1, no_bias_a.shape[1]))
-            a[l][1:, :] = no_bias_a
+        a[l] = no_bias_a
     return a
 
 
@@ -253,29 +248,24 @@ class Layer():
     def activation_function(self, z):
         return self.activation_fn(z)
 
-    def forward_pass(self, w, a_prev):
+    def forward_pass(self, w, bias, a_prev):
         if (self.ctype == Layer.C_CONV):
 
-            print a_prev[0][0]
-            print a_prev[1][0]
-            print a_prev[0][1]
-            print a_prev[1:,0].size
-            print w[1:].size
-            assert is_square(a_prev[1:,0].size)
-            assert is_square(w[1:].size)
-            a_edge_size = np.sqrt(a_prev[1:,0].size)
-            print a_edge_size
-            w_edge_size = np.sqrt(w.size - 1)
-            print w_edge_size
-            a_square = np.array(a_prev[1:].reshape((-1,a_edge_size, a_edge_size)))
-            print a_square.shape
-            w_square = w[1:].reshape((1,w_edge_size, w_edge_size))
             print w.shape
-            z = sg.convolve(a_square, w_square, mode='valid')
-            z = z + w[0]
+            print a_prev[:,0].size
+            print w.size
+            assert is_square(a_prev[:,0].size)
+            assert is_square(w.size)
+            a_edge_size = np.sqrt(a_prev[:,0].size)
+            print a_edge_size
+            a_square = np.array(a_prev.reshape((-1,a_edge_size, a_edge_size)))
+            print a_square.shape
+            w_square = w.reshape((1,w.shape[0], w.shape[1]))
+            print w.shape
+            z = sg.convolve(a_square, w_square, mode='valid') + bias
             return z
         elif self.ctype == Layer.C_FULLYCONNECTED:
-            return np.dot(w, a_prev)
+            return np.dot(w, a_prev)+bias
         else:
             raise
 
@@ -294,7 +284,7 @@ class Layer():
             delta_w[1] = delta_a.mean()
             return delta_w
         elif self.ctype == Layer.C_FULLYCONNECTED:
-            return np.dot(delta_a, a_prev.transpose())
+            return np.dot(delta_a, a_prev.transpose()), np.dot(delta_a, np.ones((1,a_prev.shape[1])).transpose())
         else:
             raise
 
@@ -345,7 +335,7 @@ def hyperparam_search(
 
 
 def main():
-    nn = NN([Layer(784), Layer(25), Layer(10, ltype=Layer.T_LOGISTIC)])
+    nn = NN([Layer(784), Layer(25, ctype=Layer.C_FULLYCONNECTED), Layer(10, ltype=Layer.T_LOGISTIC)])
 # read in data
     """
     raw_data = pd.read_csv(
