@@ -1,12 +1,13 @@
 # http://neuralnetworksanddeeplearning.com/chap3.html
+import plotting as plot
 import pandas as pd
 import numpy as np
+import scipy.signal as sg
 import random
 import mnist_loader as mnist
-import matplotlib.pyplot as plt
 import copy
 
-TRACK_VALIDATION_ACCURACY = False
+TRACK_VALIDATION_ACCURACY = True
 
 
 np.random.seed(12345678)
@@ -14,58 +15,6 @@ training_accuracy_history = list()
 validation_accuracy_history = list()
 training_cost_history = list()
 validation_cost_history = list()
-
-
-def plot_hyperparam_search(x, y, z, x_label, y_label):
-    print x
-    print y
-    print z
-    plt.figure(1)
-    plt.title('Hyperparam search')
-    plt.yscale('log')
-    plt.xscale('log')
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    plt.axis([x.min(), x.max(), y.min(), y.max()])
-    #plt.axis([x.min(), 10, y.min(), 10])
-    plt.pcolor(x, y, z, cmap='RdBu')
-    plt.colorbar()
-    plt.show()
-
-
-def plot_history(training_accuracy_history):
-    font = {'family': 'sans-serif',
-            'color': 'black',
-            'weight': 'normal',
-            'size': 16,
-            }
-
-# accuracy subplot
-    plt.figure(1)
-    plt.subplot(211)
-    plt.plot(training_accuracy_history, 'b-', label="Training Data")
-    plt.plot(validation_accuracy_history, 'r-', label="Validation Data")
-    plt.title('Model accuracy during training', fontdict=font)
-    plt.xlabel('Training Epochs', fontdict=font)
-    plt.ylabel('Classification Accuracy (%)', fontdict=font)
-    plt.subplots_adjust(hspace=.5)
-    plt.ylim([0, 1])
-    plt.legend(loc='lower right')
-
-# cost subplot
-    plt.subplot(212)
-    plt.plot(training_cost_history, 'b-', label="Training Data")
-    plt.plot(validation_cost_history, 'r-', label="Validation Data")
-    plt.title('Cost Function during training', fontdict=font)
-    plt.xlabel('Training Epochs', fontdict=font)
-    plt.ylabel('Cost', fontdict=font)
-    plt.subplots_adjust(hspace=.5)
-    plt.ylim([0, plt.ylim()[1]])
-    plt.legend(loc='upper right')
-
-# Tweak spacing to prevent clipping of ylabel
-    plt.subplots_adjust(left=0.15)
-    plt.show()
 
 
 def logistic(i):
@@ -86,12 +35,6 @@ def accuracy(output, labels):
     output_dist = list()
     label_dist = list()
     label_values = np.argmax(labels, axis=0)
-    if False:  # Use this to print distributions
-        for i in xrange(10):
-            output_dist.append((output_values == i).sum())
-            label_dist.append((label_values == i).sum())
-        print output_dist
-        print label_dist
     return sum(output_values == label_values) / float(len(label_values))
 
 # input layer = a0
@@ -103,8 +46,13 @@ def initialize_weights(nn):
     for i in xrange(1, nn.index_of_final_layer + 1):
         limit = np.sqrt(
             float(6) / (nn.layers[i - 1].size + 1 + nn.layers[i].size))
-        w[i] = np.random.uniform(-1 * limit, limit,
-                                 (nn.layers[i].size, nn.layers[i - 1].size + 1))
+        if nn.layers[i].ctype == Layer.C_FULLYCONNECTED:
+            w[i] = np.random.uniform(-1 * limit, limit,
+                                     (nn.layers[i].size, nn.layers[i - 1].size + 1))
+        elif nn.layers[i].ctype == Layer.C_CONV:
+            assert is_square(nn.layers[i].size)
+            edge = np.sqrt(nn.layers[i].size)
+            w[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i].size+1,1))
     nn.w = w
 
 
@@ -131,6 +79,35 @@ class CrossEntropyCost():
         return (outputs - labels)
 
 
+def track_accuracy(nn, training_data, validation_data, costfunction):
+
+    validation_accuracy = 0
+    if TRACK_VALIDATION_ACCURACY:
+        training_predictions = feedforward(
+            training_data.features, nn)[
+            nn.index_of_final_layer]
+        training_accuracy = accuracy(
+            training_predictions, training_data.labels)
+        training_accuracy_history.append(training_accuracy)
+        training_cost_history.append(
+            costfunction.cost(
+                training_predictions, training_data.labels))
+
+    if nn.max_declines_before_stop > 0 or TRACK_VALIDATION_ACCURACY:
+        validation_predictions = feedforward(
+            validation_data.features, nn)[
+            nn.index_of_final_layer]
+        validation_accuracy = accuracy(
+            validation_predictions,
+            validation_data.labels)
+        validation_accuracy_history.append(validation_accuracy)
+        validation_cost_history.append(
+            costfunction.cost(
+                validation_predictions, validation_data.labels))
+        print "training accuracy: " + str(training_accuracy)
+    return validation_accuracy
+
+
 def train(
         training_data, nn,
         epochs,
@@ -152,31 +129,8 @@ def train(
         if nn.max_declines_before_stop > 0:
             old_validation_accuracy = validation_accuracy
 
-        if TRACK_VALIDATION_ACCURACY:
-            training_predictions = feedforward(
-                training_data.features, nn)[
-                nn.index_of_final_layer]
-            training_accuracy = accuracy(
-                training_predictions, training_data.labels)
-            training_accuracy_history.append(training_accuracy)
-            training_cost_history.append(
-                costfunction.cost(
-                    training_predictions, training_data.labels))
-            if training_accuracy == 1:
-                break
-
-        if nn.max_declines_before_stop > 0 or TRACK_VALIDATION_ACCURACY:
-            validation_predictions = feedforward(
-                validation_data.features, nn)[
-                nn.index_of_final_layer]
-            validation_accuracy = accuracy(
-                validation_predictions,
-                validation_data.labels)
-            validation_accuracy_history.append(validation_accuracy)
-            validation_cost_history.append(
-                costfunction.cost(
-                    validation_predictions, validation_data.labels))
-            print "training accuracy: " + str(training_accuracy)
+        validation_accuracy = track_accuracy(
+            nn, training_data, validation_data, costfunction)
 
         if nn.max_declines_before_stop > 0:
             if validation_accuracy <= old_validation_accuracy:
@@ -217,17 +171,15 @@ def train(
 
              # compute delta W
                 weight_deltas = np.zeros(
-                    (this_batch_size,
-                     nn.layers[l].size,
-                        nn.layers[
-                         l - 1].size + 1))
+                    (this_batch_size, nn.w[l].shape[0], nn.w[l].shape[1]))
                 for datum in range(this_batch_size):
                     if l == nn.index_of_final_layer:
-                        weight_deltas[datum, :, :] = np.dot(np.mat(delta[l])[:, datum], np.mat(
-                            a[l - 1])[:, datum].transpose())  # mat multiplication
+                        delta_l = np.mat(delta[l])[:, datum]
                     else:
-                        weight_deltas[datum, :, :] = np.dot(np.mat(delta[l])[1:, datum], np.mat(
-                            a[l - 1])[:, datum].transpose())  # mat multiplication
+                        delta_l = np.mat(delta[l])[1:, datum]
+                    a_prev = np.mat(a[l - 1])[:, datum]
+                    weight_deltas[datum, :, :] = nn.layers[
+                        l].delta_w(a_prev, delta_l)
                 delta_w[l] = weight_deltas.mean(axis=0)
 # Apply regularization
                 regularization = 1 - nn.learning_rate * nn.l2_lamda / this_batch_size
@@ -238,18 +190,20 @@ def train(
                 nn.w[l] = nn.w[l] * regularization_mat[None, :] + velocity[l]
 
 
+def is_square(n):
+    return int(np.sqrt(n))**2 == n
+
+
 def feedforward(features, nn):
     a = dict()
     a[0] = np.ones((features.shape[0] + 1, features.shape[1]))
     a[0][1:, :] = features
     for l in nn.w:
-        z = np.dot(nn.w[l], a[l - 1])
-        if (nn.layers[l].ltype == Layer.T_LOGISTIC):
-            no_bias_a = logistic(z)
-        elif (nn.layers[l].ltype == Layer.T_SOFTMAX):
-            no_bias_a = softmax(z)
-        else:
-            raise
+
+        z = nn.layers[l].forward_pass(nn.w[l], a[l - 1])#.reshape((nn.layers[l].size+1,-1))
+        no_bias_a = nn.layers[l].activation_function(z)
+
+        # add bias if needed
         if l == nn.index_of_final_layer:
             a[l] = no_bias_a
         else:
@@ -272,21 +226,77 @@ class NN():
         self.layers = layers
         self.index_of_final_layer = len(layers) - 1
         self.w = dict()
+        self.bias = dict()
 
 # Hyperparameters
         self.max_declines_before_stop = 0
-        self.learning_rate = .1
-        self.l2_lamda = 0.119
-        self.friction = 0.53346
+        self.learning_rate = .01
+        self.l2_lamda = 0.05
+        self.friction = 0.0
 
 
 class Layer():
     T_LOGISTIC = 'LOGISTIC'
     T_SOFTMAX = 'SOFTMAX'
+    C_CONV = 'CONV'
+    C_FULLYCONNECTED = 'FULLYCONNECTED'
 
-    def __init__(self, size, ltype=T_LOGISTIC):
+    def __init__(self, size, ltype=T_LOGISTIC, ctype=C_FULLYCONNECTED):
         self.size = size
         self.ltype = ltype
+        self.ctype = ctype
+        if ltype == Layer.T_LOGISTIC:
+            self.activation_fn = logistic
+        else:
+            self.activation_fn = softmax
+
+    def activation_function(self, z):
+        return self.activation_fn(z)
+
+    def forward_pass(self, w, a_prev):
+        if (self.ctype == Layer.C_CONV):
+
+            print a_prev[0][0]
+            print a_prev[1][0]
+            print a_prev[0][1]
+            print a_prev[1:,0].size
+            print w[1:].size
+            assert is_square(a_prev[1:,0].size)
+            assert is_square(w[1:].size)
+            a_edge_size = np.sqrt(a_prev[1:,0].size)
+            print a_edge_size
+            w_edge_size = np.sqrt(w.size - 1)
+            print w_edge_size
+            a_square = np.array(a_prev[1:].reshape((-1,a_edge_size, a_edge_size)))
+            print a_square.shape
+            w_square = w[1:].reshape((1,w_edge_size, w_edge_size))
+            print w.shape
+            z = sg.convolve(a_square, w_square, mode='valid')
+            z = z + w[0]
+            return z
+        elif self.ctype == Layer.C_FULLYCONNECTED:
+            return np.dot(w, a_prev)
+        else:
+            raise
+
+    def delta_w(self, a_prev, delta_a):
+        if (self.ctype == Layer.C_CONV):
+            assert is_square(a_prev[1:].size)
+            assert is_square(delta_a.size)
+            a_prev = a_prev[1:]  # remove bias
+            a_edge_size = np.sqrt(a_prev.size)
+            delta_edge_size = np.sqrt(delta_a.size)
+            a_square = np.array(a_prev.reshape((a_edge_size, a_edge_size)))
+            delta_square = w[1:].reshape((delta_edge_size, delta_edge_size))
+            tmp = sg.convolve2d(a_square, delta_square, mode='valid')
+            delta_w = np.ones(tmp.size + 1)
+            delta_w[1:] = tmp
+            delta_w[1] = delta_a.mean()
+            return delta_w
+        elif self.ctype == Layer.C_FULLYCONNECTED:
+            return np.dot(delta_a, a_prev.transpose())
+        else:
+            raise
 
 
 class MLDataSet():
@@ -304,7 +314,7 @@ def hyperparam_search(
         nn,
         training_data,
         validation_data):
-    granularity = 5
+    granularity = 2
     eps = 1e-10
     x_range = np.logspace(
         np.log10(
@@ -321,15 +331,21 @@ def hyperparam_search(
         for y_index, y in enumerate(y_range[:-1]):
             print "x is " + str(x) + " and y is " + str(y)
 
-            train(training_data, nn, int(x), int(y))
+            train(training_data, nn, int(x), int(y),
+                  validation_data=validation_data)
 
             print "Indices: " + str(x_index) + ", " + str(y_index)
             results[x_index][y_index] = float(test(validation_data, nn))
-    plot_hyperparam_search(x_range, y_range, results.transpose(), 'epochs', 'batch size')
+    plot.plot_hyperparam_search(
+        x_range,
+        y_range,
+        results.transpose(),
+        'epochs',
+        'batch size')
 
 
 def main():
-    nn = NN([Layer(784), Layer(30), Layer(10, ltype=Layer.T_LOGISTIC)])
+    nn = NN([Layer(784), Layer(25), Layer(10, ltype=Layer.T_LOGISTIC)])
 # read in data
     """
     raw_data = pd.read_csv(
@@ -357,7 +373,7 @@ def main():
     """
     training_data, validation_data, test_data = mnist.load_data_wrapper_1()
     random.shuffle(training_data)
-    training_features, training_labels = zip(*training_data[:10000])
+    training_features, training_labels = zip(*training_data[:500])
     training_data = MLDataSet(
         np.squeeze(training_features).transpose(),
         np.squeeze(training_labels).transpose())
@@ -370,17 +386,15 @@ def main():
         np.squeeze(test_features).transpose(),
         np.squeeze(test_labels).transpose())
 
-    hyperparam_search(1, 10, 1, 1000, nn, training_data, validation_data)
-    """train(
-        training_data,
-        nn,
-        30,
-        30,
-        validation_data=validation_data)
+    #hyperparam_search(1, 10, 1, 100, nn, training_data, validation_data)
+    train(training_data, nn, 30, 10, validation_data=validation_data)
 
     test(test_data, nn)
-    plot_history(training_accuracy_history)
-    """
+    plot.plot_history(
+        training_accuracy_history,
+        validation_accuracy_history,
+        training_cost_history,
+        validation_cost_history)
 
 
 if __name__ == "__main__":
