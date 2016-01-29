@@ -1,8 +1,8 @@
 # http://neuralnetworksanddeeplearning.com/chap3.html
 import plotting as plot
+import layers
 import pandas as pd
 import numpy as np
-import scipy.signal as sg
 import random
 import mnist_loader as mnist
 import copy
@@ -17,28 +17,23 @@ training_cost_history = list()
 validation_cost_history = list()
 
 
-def logistic(i):
-    return 1 / (1 + np.exp(-1 * i))
-logistic = np.vectorize(logistic, otypes=[np.float])
-
-
-def softmax(i):
-    exp = np.exp(i)
-    denominators = np.sum(exp, axis=0)
-    softmax = exp / denominators[None, :]
-    # print softmax
-    return softmax
 
 
 def accuracy(output, labels):
     output_values = np.argmax(output, axis=0)
-    output_dist = list()
-    label_dist = list()
     label_values = np.argmax(labels, axis=0)
+    print "AC"
+    print len(label_values)
+    print len(output_values)
+    print label_values.shape
+    print labels.shape
+    print output.shape
+    print output_values.shape
     return sum(output_values == label_values) / float(len(label_values))
 
+
 # input layer = a0
-# input -> a1 = w1 * a0 -> a2 = w2 * a1
+# input -> a0 = w1 * a0 -> a2 = w2 * a1
 
 
 def initialize_weights(nn):
@@ -47,15 +42,13 @@ def initialize_weights(nn):
     for i in xrange(1, nn.index_of_final_layer + 1):
         limit = np.sqrt(
             float(6) / (nn.layers[i - 1].size + 1 + nn.layers[i].size))
-        if nn.layers[i].ctype == Layer.C_FULLYCONNECTED:
+        if isinstance(nn.layers[i],layers.FullyConnectedLayer):
             w[i] = np.random.uniform(-1 * limit, limit,
                                      (nn.layers[i].size, nn.layers[i - 1].size))
             bias[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i].size,1))
-        elif nn.layers[i].ctype == Layer.C_CONV:
-            assert is_square(nn.layers[i].size)
-            edge = np.sqrt(nn.layers[i].size)
-            w[i] = np.random.uniform(-1 * limit, limit, (edge,edge))
-            bias[i] = np.random.uniform(-1 * limit, limit, nn.layers[i].size)
+        elif isinstance(nn.layers[i],layers.ConvolutionalLayer):
+            w[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i].kernel_size))
+            bias[i] = np.random.uniform(-1 * limit, limit, (1))
     nn.w = w
     nn.bias = bias
 
@@ -173,13 +166,19 @@ def train(
 
              # compute delta W
                 bias_deltas = np.zeros(
-                    (this_batch_size, nn.bias[l].shape[0], nn.bias[l].shape[1]))
+                    (this_batch_size,)+nn.bias[l].shape)
                 weight_deltas = np.zeros(
                     (this_batch_size, nn.w[l].shape[0], nn.w[l].shape[1]))
                 for datum in range(this_batch_size):
-                    delta_l = np.mat(delta[l])[:, datum]
-                    a_prev = np.mat(a[l - 1])[:, datum]
-                    weight_deltas[datum, :, :], bias_deltas[datum,:,:] = nn.layers[
+                    """print delta[l].shape
+                    print np.mat(delta[l]).shape
+                    print np.mat(delta[l])[..., datum].shape
+                    print np.mat(delta[l][..., datum]).shape
+                    print delta[l][..., datum].shape"""
+                    #delta_l = np.mat(delta[l][..., datum])
+                    delta_l = np.mat(delta[l])[..., datum]
+                    a_prev = np.mat(a[l - 1])[..., datum]
+                    weight_deltas[datum, :, :], bias_deltas[datum] = nn.layers[
                         l].delta_w(a_prev, delta_l)#figure out how to get bias_deltas
                 delta_w[l] = weight_deltas.mean(axis=0)
                 delta_bias[l] = bias_deltas.mean(axis=0)
@@ -191,19 +190,14 @@ def train(
                 nn.bias[l] = nn.bias[l] - nn.learning_rate * delta_bias[l]
 
 
-def is_square(n):
-    return int(np.sqrt(n))**2 == n
-
 
 def feedforward(features, nn):
     a = dict()
     a[0] = features
     for l in nn.w:
-
         z = nn.layers[l].forward_pass(nn.w[l], nn.bias[l], a[l - 1])#.reshape((nn.layers[l].size+1,-1))
-        no_bias_a = nn.layers[l].activation_function(z)
+        a[l] = nn.layers[l].activation_function(z)
 
-        a[l] = no_bias_a
     return a
 
 
@@ -228,65 +222,6 @@ class NN():
         self.learning_rate = .01
         self.l2_lamda = 0.05
         self.friction = 0.0
-
-
-class Layer():
-    T_LOGISTIC = 'LOGISTIC'
-    T_SOFTMAX = 'SOFTMAX'
-    C_CONV = 'CONV'
-    C_FULLYCONNECTED = 'FULLYCONNECTED'
-
-    def __init__(self, size, ltype=T_LOGISTIC, ctype=C_FULLYCONNECTED):
-        self.size = size
-        self.ltype = ltype
-        self.ctype = ctype
-        if ltype == Layer.T_LOGISTIC:
-            self.activation_fn = logistic
-        else:
-            self.activation_fn = softmax
-
-    def activation_function(self, z):
-        return self.activation_fn(z)
-
-    def forward_pass(self, w, bias, a_prev):
-        if (self.ctype == Layer.C_CONV):
-
-            print w.shape
-            print a_prev[:,0].size
-            print w.size
-            assert is_square(a_prev[:,0].size)
-            assert is_square(w.size)
-            a_edge_size = np.sqrt(a_prev[:,0].size)
-            print a_edge_size
-            a_square = np.array(a_prev.reshape((-1,a_edge_size, a_edge_size)))
-            print a_square.shape
-            w_square = w.reshape((1,w.shape[0], w.shape[1]))
-            print w.shape
-            z = sg.convolve(a_square, w_square, mode='valid') + bias
-            return z
-        elif self.ctype == Layer.C_FULLYCONNECTED:
-            return np.dot(w, a_prev)+bias
-        else:
-            raise
-
-    def delta_w(self, a_prev, delta_a):
-        if (self.ctype == Layer.C_CONV):
-            assert is_square(a_prev[1:].size)
-            assert is_square(delta_a.size)
-            a_prev = a_prev[1:]  # remove bias
-            a_edge_size = np.sqrt(a_prev.size)
-            delta_edge_size = np.sqrt(delta_a.size)
-            a_square = np.array(a_prev.reshape((a_edge_size, a_edge_size)))
-            delta_square = w[1:].reshape((delta_edge_size, delta_edge_size))
-            tmp = sg.convolve2d(a_square, delta_square, mode='valid')
-            delta_w = np.ones(tmp.size + 1)
-            delta_w[1:] = tmp
-            delta_w[1] = delta_a.mean()
-            return delta_w
-        elif self.ctype == Layer.C_FULLYCONNECTED:
-            return np.dot(delta_a, a_prev.transpose()), np.dot(delta_a, np.ones((1,a_prev.shape[1])).transpose())
-        else:
-            raise
 
 
 class MLDataSet():
@@ -335,7 +270,8 @@ def hyperparam_search(
 
 
 def main():
-    nn = NN([Layer(784), Layer(25, ctype=Layer.C_FULLYCONNECTED), Layer(10, ltype=Layer.T_LOGISTIC)])
+    nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.ConvolutionalLayer(10,10,28,28,5,list()), layers.FullyConnectedLayer(10, 19*19,list(),ltype=layers.Layer.T_LOGISTIC)])
+    #nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.FullyConnectedLayer(28,784,list()), layers.FullyConnectedLayer(10, 28, list(), ltype=layers.Layer.T_LOGISTIC)])
 # read in data
     """
     raw_data = pd.read_csv(
