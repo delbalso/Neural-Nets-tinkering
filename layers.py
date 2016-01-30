@@ -19,7 +19,7 @@ class Layer(object):
         assert isinstance(inputs, list)
         assert isinstance(unit, neuron.Neuron)
         self.inputs_size = sum(x.size for x in inputs)
-        self.unit=unit
+        self.unit = unit
 
     def activation_function(self, z):
         return self.unit.activationfn(z)

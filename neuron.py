@@ -1,11 +1,15 @@
 import numpy as np
 
+
 class Neuron(object):
-    def activationfn(self,i):
+
+    def activationfn(self, i):
         return None
 
+
 class Logistic(Neuron):
-    def logistic(self,i):
+
+    def logistic(self, i):
         return 1 / (1 + np.exp(-1 * i))
 
     def __init__(self):
@@ -13,7 +17,8 @@ class Logistic(Neuron):
 
 
 class SoftMax(Neuron):
-    def activationfn(self,i):
+
+    def activationfn(self, i):
         exp = np.exp(i)
         denominators = np.sum(exp, axis=0)
         softmax = exp / denominators[None, :]
@@ -21,5 +26,6 @@ class SoftMax(Neuron):
 
 
 class Linear(Neuron):
-    def activationfn(self,i):
+
+    def activationfn(self, i):
         return i

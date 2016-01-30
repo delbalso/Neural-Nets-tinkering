@@ -18,8 +18,6 @@ training_cost_history = list()
 validation_cost_history = list()
 
 
-
-
 def accuracy(output, labels):
     output_values = np.argmax(output, axis=0)
     label_values = np.argmax(labels, axis=0)
@@ -43,12 +41,14 @@ def initialize_weights(nn):
     for i in xrange(1, nn.index_of_final_layer + 1):
         limit = np.sqrt(
             float(6) / (nn.layers[i - 1].size + 1 + nn.layers[i].size))
-        if isinstance(nn.layers[i],layers.FullyConnectedLayer):
+        if isinstance(nn.layers[i], layers.FullyConnectedLayer):
             w[i] = np.random.uniform(-1 * limit, limit,
                                      (nn.layers[i].size, nn.layers[i - 1].size))
-            bias[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i].size,1))
-        elif isinstance(nn.layers[i],layers.ConvolutionalLayer):
-            w[i] = np.random.uniform(-1 * limit, limit, (nn.layers[i].kernel_size))
+            bias[i] = np.random.uniform(-1 * limit,
+                                        limit, (nn.layers[i].size, 1))
+        elif isinstance(nn.layers[i], layers.ConvolutionalLayer):
+            w[i] = np.random.uniform(-1 * limit, limit,
+                                     (nn.layers[i].kernel_size))
             bias[i] = np.random.uniform(-1 * limit, limit, (1))
     nn.w = w
     nn.bias = bias
@@ -167,7 +167,7 @@ def train(
 
              # compute delta W
                 bias_deltas = np.zeros(
-                    (this_batch_size,)+nn.bias[l].shape)
+                    (this_batch_size,) + nn.bias[l].shape)
                 weight_deltas = np.zeros(
                     (this_batch_size, nn.w[l].shape[0], nn.w[l].shape[1]))
                 for datum in range(this_batch_size):
@@ -180,7 +180,7 @@ def train(
                     delta_l = np.mat(delta[l])[..., datum]
                     a_prev = np.mat(a[l - 1])[..., datum]
                     weight_deltas[datum, :, :], bias_deltas[datum] = nn.layers[
-                        l].delta_w(a_prev, delta_l)#figure out how to get bias_deltas
+                        l].delta_w(a_prev, delta_l)  # figure out how to get bias_deltas
                 delta_w[l] = weight_deltas.mean(axis=0)
                 delta_bias[l] = bias_deltas.mean(axis=0)
 # Apply regularization
@@ -191,12 +191,13 @@ def train(
                 nn.bias[l] = nn.bias[l] - nn.learning_rate * delta_bias[l]
 
 
-
 def feedforward(features, nn):
     a = dict()
     a[0] = features
     for l in nn.w:
-        z = nn.layers[l].forward_pass(nn.w[l], nn.bias[l], a[l - 1])#.reshape((nn.layers[l].size+1,-1))
+        z = nn.layers[l].forward_pass(
+            nn.w[l], nn.bias[l], a[
+                l - 1])  # .reshape((nn.layers[l].size+1,-1))
         a[l] = nn.layers[l].activation_function(z)
 
     return a
@@ -271,8 +272,10 @@ def hyperparam_search(
 
 
 def main():
+    nn = NN([None, layers.ConvolutionalLayer(10, 10, 28, 28, 5, list()),
+             layers.FullyConnectedLayer(10, 19 * 19, list(), unit=neuron.Logistic())])
     #nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.ConvolutionalLayer(10,10,28,28,5,list()), layers.FullyConnectedLayer(10, 19*19,list(),unit=neuron.Logistic())])
-    nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.FullyConnectedLayer(28,784,list()), layers.FullyConnectedLayer(10, 28, list(), unit=neuron.Logistic())])
+    #nn = NN([layers.FullyConnectedLayer(784, 784, list()), layers.FullyConnectedLayer(28, 784, list()), layers.FullyConnectedLayer(10, 28, list(), unit=neuron.Logistic())])
 # read in data
     """
     raw_data = pd.read_csv(
