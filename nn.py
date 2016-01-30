@@ -6,6 +6,7 @@ import numpy as np
 import random
 import mnist_loader as mnist
 import copy
+import neuron
 
 TRACK_VALIDATION_ACCURACY = True
 
@@ -270,8 +271,8 @@ def hyperparam_search(
 
 
 def main():
-    nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.ConvolutionalLayer(10,10,28,28,5,list()), layers.FullyConnectedLayer(10, 19*19,list(),ltype=layers.Layer.T_LOGISTIC)])
-    #nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.FullyConnectedLayer(28,784,list()), layers.FullyConnectedLayer(10, 28, list(), ltype=layers.Layer.T_LOGISTIC)])
+    #nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.ConvolutionalLayer(10,10,28,28,5,list()), layers.FullyConnectedLayer(10, 19*19,list(),unit=neuron.Logistic())])
+    nn = NN([layers.FullyConnectedLayer(784,784,list()), layers.FullyConnectedLayer(28,784,list()), layers.FullyConnectedLayer(10, 28, list(), unit=neuron.Logistic())])
 # read in data
     """
     raw_data = pd.read_csv(

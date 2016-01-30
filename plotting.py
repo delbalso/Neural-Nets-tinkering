@@ -1,6 +1,7 @@
 
 import matplotlib.pyplot as plt
 
+
 def plot_hyperparam_search(x, y, z, x_label, y_label):
     print x
     print y
@@ -18,7 +19,11 @@ def plot_hyperparam_search(x, y, z, x_label, y_label):
     plt.show()
 
 
-def plot_history(training_accuracy_history, validation_accuracy_history, training_cost_history, validation_cost_history):
+def plot_history(
+        training_accuracy_history,
+        validation_accuracy_history,
+        training_cost_history,
+        validation_cost_history):
     font = {'family': 'sans-serif',
             'color': 'black',
             'weight': 'normal',
@@ -51,4 +56,3 @@ def plot_history(training_accuracy_history, validation_accuracy_history, trainin
 # Tweak spacing to prevent clipping of ylabel
     plt.subplots_adjust(left=0.15)
     plt.show()
-
